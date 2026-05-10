@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="my" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MM POS</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Myanmar:wght@300;400;500;600;700&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        'main': ['Space Grotesk', 'Noto Sans Myanmar', 'sans-serif'],
+      }
+    }
+  }
+}
+</script>
+  <style>
+* { font-family: 'Space Grotesk', 'Noto Sans Myanmar', sans-serif; }
+.tab-active { background: var(--accent); color: white; }
+.slide-in { animation: slideIn 0.3s ease; }
+@keyframes slideIn { from { transform: translateX(100%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+@keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+.fade-in { animation: fadeIn 0.3s ease; }
+:root {
+  --bg: #0f0f23;
+  --surface: #1a1a3e;
+  --accent: #6c5ce7;
+  --accent2: #00cec9;
+  --text: #dfe6e9;
+  --danger: #ff6b6b;
+}
+body { background: var(--bg); color: var(--text); }
+.card { background: var(--surface); border-radius: 16px; border: 1px solid rgba(108,92,231,0.2); }
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { background: #5a4bd6; }
+.btn-danger { background: var(--danger); color: white; }
+.input-field { background: rgba(255,255,255,0.05); border: 1px solid rgba(108,92,231,0.3); color: var(--text); border-radius: 10px; padding: 10px 14px; width: 100%; }
+.input-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,92,231,0.2); }
+.product-card { transition: all 0.2s; }
+.product-card:active { transform: scale(0.97); }
+.voucher-print { background: white; color: #333; padding: 20px; font-size: 12px; }
+.voucher-print * { color: #333 !important; }
+.no-print { }
+@media print {
+  .no-print { display: none !important; }
+  body * { visibility: hidden; }
+  #voucher-preview, #voucher-preview * { visibility: visible; }
+  #voucher-preview { position: absolute; left: 0; top: 0; width: 80mm; }
+}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
+  <style>body { box-sizing: border-box; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+  <script src="/_sdk/element_sdk.js" type="text/javascript"></script>
+ </head>
+ <body class="h-full">
+  <div id="app" class="h-full w-full flex flex-col overflow-hidden">
+   <!-- Bottom Nav -->
+   <div class="flex-1 overflow-auto scrollbar-hide" id="page-content"></div>
+   <nav class="flex justify-around items-center py-2 px-1 border-t border-purple-900/30 no-print" style="background:var(--surface);" id="bottom-nav">
+    <button onclick="switchTab('dashboard')" class="flex flex-col items-center gap-1 px-3 py-1 rounded-xl text-xs transition-all" data-tab="dashboard"><i data-lucide="layout-dashboard" style="width:20px;height:20px;"></i><span>Home</span></button> <button onclick="switchTab('products')" class="flex flex-col items-center gap-1 px-3 py-1 rounded-xl text-xs transition-all" data-tab="products"><i data-lucide="package" style="width:20px;height:20px;"></i><span>Products</span></button> <button onclick="switchTab('sell')" class="flex flex-col items-center gap-1 px-3 py-1 rounded-xl text-xs transition-all" data-tab="sell"><i data-lucide="shopping-cart" style="width:20px;height:20px;"></i><span>Sell</span></button> <button onclick="switchTab('records')" class="flex flex-col items-center gap-1 px-3 py-1 rounded-xl text-xs transition-all" data-tab="records"><i data-lucide="file-text" style="width:20px;height:20px;"></i><span>Records</span></button> <button onclick="switchTab('voucher')" class="flex flex-col items-center gap-1 px-3 py-1 rounded-xl text-xs transition-all" data-tab="voucher"><i data-lucide="receipt" style="width:20px;height:20px;"></i><span>Voucher</span></button> <button onclick="switchTab('settings')" class="flex flex-col items-center gap-1 px-3 py-1 rounded-xl text-xs transition-all" data-tab="settings"><i data-lucide="settings" style="width:20px;height:20px;"></i><span>Settings</span></button>
+   </nav>
+  </div>
+  <script>
+// State
+let allData = [];
+let products = [];
+let sales = [];
+let cart = [];
+let currentTab = 'dashboard';
+let settings = {
+  shop_name: 'My Shop',
+  shop_phone: '',
+  shop_address: '',
+  voucher_prefix: 'INV',
+  voucher_counter: 1,
+  logo_image: '',
+  delivery_fee: 0,
+  note: '',
+  watermark: '',
+  frame: '',
+  wallets: [],
+  dark_mode: true,
+  bg_color: '#0f0f23',
+  btn_color: '#6c5ce7',
+  dashboard_logo: '',
+  dashboard_name: 'Smart POS'
+};
+
+// Load from localStorage
+function loadData() {
+  try {
+    const saved = localStorage.getItem('pos_data');
+    if (saved) {
+      const data = JSON.parse(saved);
+      products = data.products || [];
+      sales = data.sales || [];
+    }
+    const settingsSaved = localStorage.getItem('pos_settings');
+    if (settingsSaved) Object.assign(settings, JSON.parse(settingsSaved));
+  } catch(e) {}
+}
+
+function saveData() {
+  localStorage.setItem('pos_data', JSON.stringify({products, sales}));
+}
+
+function saveSettings() {
+  localStorage.setItem('pos_settings', JSON.stringify(settings));
+  applyTheme();
+}
+
+function applyTheme() {
+  document.documentElement.style.setProperty('--bg', settings.bg_color);
+  document.documentElement.style.setProperty('--accent', settings.btn_color);
+  document.body.style.background = settings.bg_color;
+}
+
+loadData();
+applyTheme();
+switchTab('dashboard');
+
+// Tab switching
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('#bottom-nav button').forEach(btn => {
+    btn.classList.remove('tab-active');
+    if (btn.dataset.tab === tab) btn.classList.add('tab-active');
+  });
+  renderCurrentTab();
+}
+
+function renderCurrentTab() {
+  const el = document.getElementById('page-content');
+  switch(currentTab) {
+    case 'dashboard': el.innerHTML = renderDashboard(); break;
+    case 'products': el.innerHTML = renderProducts(); break;
+    case 'sell': el.innerHTML = renderSell(); break;
+    case 'records': el.innerHTML = renderRecords(); break;
+    case 'voucher': el.innerHTML = renderVoucherSettings(); break;
+    case 'settings': el.innerHTML = renderSettings(); break;
+  }
+  lucide.createIcons();
+}
+
+// DASHBOARD
+function renderDashboard() {
+  const today = new Date().toISOString().split('T')[0];
+  const todaySales = sales.filter(s => s.sale_date && s.sale_date.startsWith(today));
+  const todayTotal = todaySales.reduce((sum, s) => sum + (s.sale_total || 0), 0);
+  const monthSales = sales.filter(s => {
+    const d = new Date(s.sale_date);
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+  const monthTotal = monthSales.reduce((sum, s) => sum + (s.sale_total || 0), 0);
+
+  // Top selling
+  const productSales = {};
+  monthSales.forEach(s => {
+    try {
+      const items = JSON.parse(s.sale_items || '[]');
+      items.forEach(i => { productSales[i.name] = (productSales[i.name]||0) + (i.qty||1); });
+    } catch(e){}
+  });
+  const topSelling = Object.entries(productSales).sort((a,b) => b[1]-a[1]).slice(0,5);
+
+  return `
+  <div class="p-4 fade-in">
+    <div class="flex items-center gap-3 mb-6">
+      ${settings.dashboard_logo ? `<img src="${settings.dashboard_logo}" class="w-10 h-10 rounded-full object-cover" onerror="this.style.display='none'">` : `<div class="w-10 h-10 rounded-full flex items-center justify-center" style="background:var(--accent)"><i data-lucide="zap" style="width:20px;height:20px;color:white"></i></div>`}
+      <h1 class="text-xl font-bold">${settings.dashboard_name}</h1>
+    </div>
+    <div class="grid grid-cols-2 gap-3 mb-6">
+      <div class="card p-4">
+        <p class="text-xs opacity-60">ယနေ့ရောင်းရငွေ</p>
+        <p class="text-lg font-bold" style="color:var(--accent2)">${todayTotal.toLocaleString()} Ks</p>
+        <p class="text-xs opacity-50">${todaySales.length} orders</p>
+      </div>
+      <div class="card p-4">
+        <p class="text-xs opacity-60">လစဉ်ရောင်းရငွေ</p>
+        <p class="text-lg font-bold" style="color:var(--accent)">${monthTotal.toLocaleString()} Ks</p>
+        <p class="text-xs opacity-50">${monthSales.length} orders</p>
+      </div>
+      <div class="card p-4">
+        <p class="text-xs opacity-60">ပစ္စည်းအရေအတွက်</p>
+        <p class="text-lg font-bold">${products.length}</p>
+      </div>
+      <div class="card p-4">
+        <p class="text-xs opacity-60">စုစုပေါင်းအရောင်း</p>
+        <p class="text-lg font-bold">${sales.length}</p>
+      </div>
+    </div>
+    ${topSelling.length > 0 ? `
+    <div class="card p-4">
+      <h3 class="font-semibold mb-3">🔥 ဤလအရောင်းရဆုံး</h3>
+      ${topSelling.map((t,i) => `<div class="flex justify-between py-2 border-b border-white/5"><span>${i+1}. ${t[0]}</span><span class="font-semibold">${t[1]} ခု</span></div>`).join('')}
+    </div>` : '<div class="card p-4 text-center opacity-50">အရောင်းမှတ်တမ်းမရှိသေးပါ</div>'}
+  </div>`;
+}
+
+// PRODUCTS
+let editingProduct = null;
+
+function renderProducts() {
+  return `
+  <div class="p-4 pb-24 fade-in">
+    <div class="flex justify-between items-center mb-4 sticky top-0 z-10 -mx-4 -mt-4 px-4 py-4" style="background:var(--bg);">
+      <h2 class="text-lg font-bold">ပစ္စည်းများ (${products.length})</h2>
+      <button onclick="showAddProduct()" class="btn-primary px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2"><i data-lucide="plus" style="width:16px;height:16px;"></i>အသစ်ထည့်</button>
+    </div>
+    <div id="product-form-area"></div>
+    <div class="space-y-3" id="product-list">
+      ${products.length === 0 ? '<p class="text-center opacity-50 py-8">ပစ္စည်းမရှိသေးပါ</p>' :
+        products.map(p => `
+        <div class="card p-3 product-card flex gap-3 items-center">
+          ${p.image ? `<img src="${p.image}" class="w-14 h-14 rounded-lg object-cover" onerror="this.style.background='#333';this.alt='No img';">` : `<div class="w-14 h-14 rounded-lg flex items-center justify-center" style="background:rgba(108,92,231,0.2)"><i data-lucide="package" style="width:24px;height:24px;color:var(--accent)"></i></div>`}
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold truncate">${p.name}</p>
+            <p class="text-sm" style="color:var(--accent2)">${(p.price||0).toLocaleString()} Ks</p>
+            <div class="flex gap-2 text-xs opacity-60 mt-1">
+              ${p.color ? `<span>🎨${p.color}</span>` : ''}
+              ${p.size ? `<span>📐${p.size}</span>` : ''}
+              ${p.stock !== null && p.stock !== undefined ? `<span>📦${p.stock}</span>` : ''}
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <button onclick="editProduct('${p.id}')" class="p-2 rounded-lg" style="background:rgba(108,92,231,0.2)"><i data-lucide="edit" style="width:14px;height:14px;color:var(--accent)"></i></button>
+            <button onclick="confirmDeleteProduct('${p.id}')" class="p-2 rounded-lg" style="background:rgba(255,107,107,0.2)"><i data-lucide="trash-2" style="width:14px;height:14px;color:var(--danger)"></i></button>
+          </div>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function showAddProduct() {
+  editingProduct = null;
+  showProductForm({});
+}
+
+function editProduct(id) {
+  const p = products.find(x => x.id === id);
+  if (p) { editingProduct = p; showProductForm(p); }
+}
+
+function showProductForm(p) {
+  const area = document.getElementById('product-form-area');
+  area.innerHTML = `
+  <div class="card p-4 mb-4 slide-in">
+    <h3 class="font-semibold mb-3">${editingProduct ? 'ပစ္စည်းပြင်ဆင်' : 'ပစ္စည်းအသစ်ထည့်'}</h3>
+    <div class="space-y-3">
+      <div><label class="text-xs opacity-60">ပစ္စည်းအမည် *</label><input id="pf-name" class="input-field" value="${p.name||''}" placeholder="ပစ္စည်းအမည်"></div>
+      <div><label class="text-xs opacity-60">စျေးနှုန်း (Ks) *</label><input id="pf-price" type="number" class="input-field" value="${p.price||''}" placeholder="0"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs opacity-60">အရောင်</label><input id="pf-color" class="input-field" value="${p.color||''}" placeholder="Optional"></div>
+        <div><label class="text-xs opacity-60">ဆိုဒ်</label><input id="pf-size" class="input-field" value="${p.size||''}" placeholder="Optional"></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs opacity-60">အလေးချိန်</label><input id="pf-weight" class="input-field" value="${p.weight||''}" placeholder="Optional"></div>
+        <div><label class="text-xs opacity-60">လက်ကျန်</label><input id="pf-stock" type="number" class="input-field" value="${p.stock!=null?p.stock:''}" placeholder="Optional"></div>
+      </div>
+      <div><label class="text-xs opacity-60">ပုံ (Upload)</label><input type="file" id="pf-image" accept="image/*" class="input-field text-sm" onchange="handleProductImage(this)"></div>
+      <div id="pf-img-preview">${p.image ? `<img src="${p.image}" class="w-16 h-16 rounded-lg object-cover mt-1">` : ''}</div>
+      <div class="flex gap-2">
+        <button onclick="saveProduct()" class="btn-primary flex-1 py-2 rounded-xl font-medium">သိမ်းမည်</button>
+        <button onclick="document.getElementById('product-form-area').innerHTML=''" class="flex-1 py-2 rounded-xl font-medium" style="background:rgba(255,255,255,0.1)">ပယ်ဖျက်</button>
+      </div>
+    </div>
+  </div>`;
+  lucide.createIcons();
+}
+
+let tempProductImage = '';
+function handleProductImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    tempProductImage = e.target.result;
+    document.getElementById('pf-img-preview').innerHTML = `<img src="${tempProductImage}" class="w-16 h-16 rounded-lg object-cover mt-1">`;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveProduct() {
+  const name = document.getElementById('pf-name').value.trim();
+  const price = parseFloat(document.getElementById('pf-price').value) || 0;
+  if (!name) { showToast('ပစ္စည်းအမည်ထည့်ပါ','error'); return; }
+  const data = {
+    id: editingProduct ? editingProduct.id : Date.now().toString(),
+    type: 'product',
+    name,
+    price,
+    color: document.getElementById('pf-color').value.trim(),
+    size: document.getElementById('pf-size').value.trim(),
+    weight: document.getElementById('pf-weight').value.trim(),
+    stock: document.getElementById('pf-stock').value !== '' ? parseInt(document.getElementById('pf-stock').value) : null,
+    image: tempProductImage || (editingProduct ? editingProduct.image : '') || '',
+    sold_qty: 0,
+    sale_date: '',
+    sale_total: 0,
+    sale_items: '',
+    voucher_no: '',
+    customer_note: '',
+    created_at: new Date().toISOString()
+  };
+  if (editingProduct) {
+    const idx = products.findIndex(p => p.id === editingProduct.id);
+    if (idx >= 0) products[idx] = data;
+  } else {
+    products.push(data);
+  }
+  saveData();// Google Sheets ဆီ Data ပို့ခြင်း
+async function syncToGoogleSheet(saleData) {
+  const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzgroferIcvaZGP6d4VZgsoupy2mB1gUb0gxHObY9qR0_X8C07oLjXgZbjsmVemz7tt8Q/exec';
+
+  try {
+    const response = await fetch(GOOGLE_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors', // CORS error မတက်အောင်
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        voucher_no: saleData.voucher_no,
+        sale_date: saleData.sale_date,
+        sale_items: JSON.parse(saleData.sale_items).map(i => `${i.name}(${i.qty})`).join(', '),
+        sale_total: saleData.sale_total,
+        payment_method: saleData.payment_method
+      })
+    });
+    console.log("Synced to Google Sheets");
+  } catch (error) {
+    console.error("Error syncing to Google Sheets:", error);
+  }
+}
+
+// completeSale function ထဲမှာ ဒါကို ခေါ်သုံးပါ
+// sales.push(saleData); ပြီးနောက်မှာ အောက်ကစာကြောင်းကို ထည့်ပါ
+syncToGoogleSheet(saleData);
+  showToast('သိမ်းပြီး!','success');
+  tempProductImage='';
+  document.getElementById('product-form-area').innerHTML='';
+  renderCurrentTab();
+}
+
+let deleteConfirmId = null;
+function confirmDeleteProduct(id) {
+  deleteConfirmId = id;
+  const el = document.querySelector(`[onclick="confirmDeleteProduct('${id}')"]`);
+  if (el) {
+    el.outerHTML = `<div class="flex flex-col gap-1"><button onclick="doDeleteProduct('${id}')" class="px-2 py-1 rounded text-xs btn-danger">ဖျက်မည်</button><button onclick="renderCurrentTab()" class="px-2 py-1 rounded text-xs" style="background:rgba(255,255,255,0.1)">မလုပ်</button></div>`;
+  }
+}
+
+async function doDeleteProduct(id) {
+  const idx = products.findIndex(p => p.id === id);
+  if (idx >= 0) {
+    products.splice(idx, 1);
+    saveData();
+    showToast('ဖျက်ပြီး','success');
+    renderCurrentTab();
+  }
+}
+
+// SELL
+function renderSell() {
+  return `
+  <div class="p-4 fade-in">
+    <h2 class="text-lg font-bold mb-3">ရောင်းမည်</h2>
+    <div class="mb-3"><input id="sell-search" class="input-field" placeholder="🔍 ပစ္စည်းရှာ..." oninput="filterSellProducts()"></div>
+    <div class="grid grid-cols-3 gap-2 mb-4" id="sell-product-grid">
+      ${products.map(p => `
+      <button onclick="addToCart('${p.id}')" class="card p-2 text-center product-card">
+        ${p.image ? `<img src="${p.image}" class="w-full h-12 object-cover rounded-lg mb-1" onerror="this.style.background='#333'">` : `<div class="w-full h-12 rounded-lg flex items-center justify-center mb-1" style="background:rgba(108,92,231,0.2)"><i data-lucide="package" style="width:16px;height:16px;"></i></div>`}
+        <p class="text-xs truncate">${p.name}</p>
+        <p class="text-xs font-bold" style="color:var(--accent2)">${(p.price||0).toLocaleString()}</p>
+      </button>`).join('')}
+    </div>
+    ${cart.length > 0 ? `
+    <div class="card p-4">
+      <h3 class="font-semibold mb-2">🛒 Cart (${cart.reduce((s,c)=>s+c.qty,0)})</h3>
+      <div class="space-y-2 mb-3">
+        ${cart.map((c,i) => `
+        <div class="flex justify-between items-center text-sm">
+          <span class="flex-1 truncate">${c.name}</span>
+          <div class="flex items-center gap-2">
+            <button onclick="changeQty(${i},-1)" class="w-6 h-6 rounded-full flex items-center justify-center" style="background:rgba(255,255,255,0.1)">-</button>
+            <span>${c.qty}</span>
+            <button onclick="changeQty(${i},1)" class="w-6 h-6 rounded-full flex items-center justify-center" style="background:rgba(255,255,255,0.1)">+</button>
+            <span class="w-20 text-right">${(c.price*c.qty).toLocaleString()}</span>
+            <button onclick="removeFromCart(${i})" class="text-red-400 ml-1"><i data-lucide="x" style="width:14px;height:14px;"></i></button>
+          </div>
+        </div>`).join('')}
+      </div>
+      <div class="border-t border-white/10 pt-2 mb-3">
+        ${settings.delivery_fee ? `<div class="flex justify-between text-sm"><span>Delivery</span><span>${settings.delivery_fee.toLocaleString()} Ks</span></div>` : ''}
+        <div class="flex justify-between font-bold text-lg"><span>Total</span><span style="color:var(--accent2)">${getCartTotal().toLocaleString()} Ks</span></div>
+      </div>
+      <div class="mb-3">
+        <label class="text-xs opacity-60 block mb-2">ငွေပေးချေနည်း ရွေးပါ</label>
+        <select id="payment-method" class="input-field text-sm">
+          <option value="">အခြား</option>
+          ${settings.wallets.map((w,i) => `<option value="${i}">${w.name}</option>`).join('')}
+        </select>
+      </div>
+      <button onclick="completeSale()" class="btn-primary w-full py-3 rounded-xl font-bold text-base">💰 ရောင်းမည်</button>
+    </div>` : '<p class="text-center opacity-50 py-4">ပစ္စည်းရွေးပါ</p>'}
+  </div>`;
+}
+
+function filterSellProducts() {
+  const q = document.getElementById('sell-search').value.toLowerCase();
+  const grid = document.getElementById('sell-product-grid');
+  const filtered = products.filter(p => p.name.toLowerCase().includes(q));
+  grid.innerHTML = filtered.map(p => `
+  <button onclick="addToCart('${p.id}')" class="card p-2 text-center product-card">
+    ${p.image ? `<img src="${p.image}" class="w-full h-12 object-cover rounded-lg mb-1" onerror="this.style.background='#333'">` : `<div class="w-full h-12 rounded-lg flex items-center justify-center mb-1" style="background:rgba(108,92,231,0.2)"><i data-lucide="package" style="width:16px;height:16px;"></i></div>`}
+    <p class="text-xs truncate">${p.name}</p>
+    <p class="text-xs font-bold" style="color:var(--accent2)">${(p.price||0).toLocaleString()}</p>
+  </button>`).join('');
+  lucide.createIcons();
+}
+
+function addToCart(id) {
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+  const existing = cart.find(c => c.id === id);
+  if (existing) existing.qty++;
+  else cart.push({id, name: p.name, price: p.price, qty: 1});
+  renderCurrentTab();
+}
+
+function changeQty(i, d) {
+  cart[i].qty += d;
+  if (cart[i].qty <= 0) cart.splice(i, 1);
+  renderCurrentTab();
+}
+
+function removeFromCart(i) { cart.splice(i, 1); renderCurrentTab(); }
+
+function getCartTotal() {
+  return cart.reduce((s,c) => s + c.price * c.qty, 0) + (settings.delivery_fee || 0);
+}
+
+async function completeSale() {
+  if (cart.length === 0) return;
+  const selectedPayment = document.getElementById('payment-method').value;
+  const paymentMethod = selectedPayment !== '' ? settings.wallets[parseInt(selectedPayment)]?.name : '';
+  
+  const vNo = `${settings.voucher_prefix}-${String(settings.voucher_counter).padStart(4,'0')}`;
+  settings.voucher_counter++;
+  saveSettings();
+  
+  const saleData = {
+    id: Date.now().toString(),
+    type: 'sale',
+    name: '',
+    price: 0,
+    color: '',
+    size: '',
+    weight: '',
+    stock: null,
+    image: '',
+    sold_qty: cart.reduce((s,c) => s+c.qty, 0),
+    sale_date: new Date().toISOString(),
+    sale_total: getCartTotal(),
+    sale_items: JSON.stringify(cart),
+    voucher_no: vNo,
+    payment_method: paymentMethod,
+    customer_note: '',
+    created_at: new Date().toISOString()
+  };
+  
+  sales.push(saleData);
+  
+  // Update stock
+  for (const c of cart) {
+    const pidx = products.findIndex(x => x.id === c.id);
+    if (pidx >= 0 && products[pidx].stock !== null && products[pidx].stock !== undefined) {
+      products[pidx].stock = Math.max(0, products[pidx].stock - c.qty);
+    }
+  }
+  
+  saveData();
+  lastVoucher = {...saleData};
+  cart = [];
+  showToast('ရောင်းပြီး! ✅','success');
+  switchTab('records');
+}
+
+let lastVoucher = null;
+
+// RECORDS
+function renderRecords() {
+  const now = new Date();
+  const monthSales = sales.filter(s => {
+    const d = new Date(s.sale_date);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).sort((a,b) => new Date(b.sale_date) - new Date(a.sale_date));
+
+  const monthTotal = monthSales.reduce((s,x) => s + (x.sale_total||0), 0);
+
+  return `
+  <div class="p-4 fade-in">
+    <h2 class="text-lg font-bold mb-2">အရောင်းမှတ်တမ်း</h2>
+    <div class="card p-3 mb-4"><p class="text-xs opacity-60">ဤလစုစုပေါင်း</p><p class="text-xl font-bold" style="color:var(--accent2)">${monthTotal.toLocaleString()} Ks</p><p class="text-xs opacity-50">${monthSales.length} orders</p></div>
+    <div class="space-y-2">
+      ${monthSales.length === 0 ? '<p class="text-center opacity-50 py-8">မှတ်တမ်းမရှိသေးပါ</p>' :
+        monthSales.map(s => {
+          const d = new Date(s.sale_date);
+          const items = JSON.parse(s.sale_items||'[]');
+          return `
+          <div class="card p-3">
+            <div class="flex justify-between items-start">
+              <div>
+                <p class="text-xs opacity-50">${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+                <p class="font-semibold text-sm" style="color:var(--accent)">${s.voucher_no}</p>
+                <p class="text-xs opacity-70">${items.map(i => `${i.name}×${i.qty}`).join(', ')}</p>
+                ${s.payment_method ? `<p class="text-xs opacity-60 mt-1">💳 ${s.payment_method}</p>` : ''}
+              </div>
+              <div class="text-right">
+                <p class="font-bold" style="color:var(--accent2)">${(s.sale_total||0).toLocaleString()} Ks</p>
+                <button onclick="confirmDeleteSale('${s.id}', this)" class="text-xs text-red-400 mt-1">ဖျက်မည်</button>
+              </div>
+            </div>
+            <button onclick="viewVoucher('${s.id}')" class="w-full mt-2 py-1 rounded-lg text-xs" style="background:rgba(108,92,231,0.2);color:var(--accent)">ဘောင်ချာကြည့်</button>
+          </div>`;
+        }).join('')}
+    </div>
+  </div>`;
+}
+
+function confirmDeleteSale(id, btn) {
+  btn.outerHTML = `<div class="flex gap-1"><button onclick="doDeleteSale('${id}')" class="text-xs px-2 py-1 rounded btn-danger">အတည်ပြု</button><button onclick="renderCurrentTab()" class="text-xs px-2 py-1 rounded" style="background:rgba(255,255,255,0.1)">မလုပ်</button></div>`;
+}
+
+async function doDeleteSale(id) {
+  const sidx = sales.findIndex(s => s.id === id);
+  if (sidx >= 0) {
+    sales.splice(sidx, 1);
+    saveData();
+    showToast('ဖျက်ပြီး','success');
+    renderCurrentTab();
+  }
+}
+
+function viewVoucher(id) {
+  const s = sales.find(x => x.id === id);
+  if (s) { lastVoucher = s; switchTab('voucher-view'); currentTab = 'voucher-view'; renderVoucherView(); }
+}
+
+function renderVoucherView() {
+  const el = document.getElementById('page-content');
+  if (!lastVoucher) { switchTab('records'); return; }
+  const items = JSON.parse(lastVoucher.sale_items||'[]');
+  const d = new Date(lastVoucher.sale_date);
+  el.innerHTML = `
+  <div class="p-4 fade-in">
+    <button onclick="switchTab('records')" class="mb-3 flex items-center gap-2 text-sm opacity-70"><i data-lucide="arrow-left" style="width:16px;height:16px;"></i>Back</button>
+    <div id="voucher-preview" class="voucher-print rounded-xl mx-auto" style="max-width:320px;">
+      ${settings.watermark ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);opacity:0.05;font-size:60px;pointer-events:none;">${settings.watermark}</div>` : ''}
+      <div style="text-align:center;margin-bottom:12px;">
+        ${settings.logo_image ? `<img src="${settings.logo_image}" style="width:50px;height:50px;border-radius:50%;margin:0 auto 8px;object-fit:cover;" onerror="this.style.display='none'">` : ''}
+        <h2 style="font-size:16px;font-weight:bold;margin:0;">${settings.shop_name}</h2>
+        ${settings.shop_phone ? `<p style="font-size:11px;margin:2px 0;">${settings.shop_phone}</p>` : ''}
+        ${settings.shop_address ? `<p style="font-size:11px;margin:2px 0;">${settings.shop_address}</p>` : ''}
+      </div>
+      <div style="border-top:1px dashed #ccc;margin:8px 0;"></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:8px;">
+        <span><strong>${lastVoucher.voucher_no}</strong></span>
+        <span>${d.toLocaleDateString()} ${d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+      </div>
+      <table style="width:100%;font-size:11px;border-collapse:collapse;">
+        <tr style="border-bottom:1px solid #eee;"><th style="text-align:left;padding:4px 0;">Item</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Amount</th></tr>
+        ${items.map(i => `<tr style="border-bottom:1px solid #f5f5f5;"><td style="padding:4px 0;">${i.name}</td><td style="text-align:center;">${i.qty}</td><td style="text-align:right;">${(i.price*i.qty).toLocaleString()}</td></tr>`).join('')}
+      </table>
+      <div style="border-top:1px dashed #ccc;margin:8px 0;"></div>
+      ${settings.delivery_fee ? `<div style="display:flex;justify-content:space-between;font-size:11px;"><span>Delivery</span><span>${settings.delivery_fee.toLocaleString()} Ks</span></div>` : ''}
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-top:4px;"><span>Total</span><span>${(lastVoucher.sale_total||0).toLocaleString()} Ks</span></div>
+      ${settings.wallets.length > 0 ? `<div style="margin-top:10px;border-top:1px dashed #ccc;padding-top:8px;"><p style="font-size:10px;font-weight:bold;margin-bottom:4px;">ငွေပေးချေမှု</p><p style="font-size:10px;">${lastVoucher.payment_method || 'အခြား'}</p></div>` : ''}
+      ${settings.note ? `<p style="font-size:10px;margin-top:8px;text-align:center;opacity:0.6;">${settings.note}</p>` : ''}
+    </div>
+    <div class="flex gap-2 mt-4 no-print" style="max-width:320px;margin:0 auto;">
+      <button onclick="printVoucher()" class="btn-primary flex-1 py-2 rounded-xl text-sm flex items-center justify-center gap-2"><i data-lucide="printer" style="width:14px;height:14px;"></i>Print</button>
+      <button onclick="saveVoucherImage()" class="flex-1 py-2 rounded-xl text-sm flex items-center justify-center gap-2" style="background:var(--accent2);color:white;"><i data-lucide="download" style="width:14px;height:14px;"></i>Save Image</button>
+    </div>
+  </div>`;
+  lucide.createIcons();
+}
+
+function printVoucher() { window.print(); }
+
+function saveVoucherImage() {
+  const el = document.getElementById('voucher-preview');
+  // Use canvas approach
+  const canvas = document.createElement('canvas');
+  const rect = el.getBoundingClientRect();
+  canvas.width = rect.width * 2;
+  canvas.height = rect.height * 2;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, rect.width, rect.height);
+  // Serialize to SVG foreignObject
+  const data = new XMLSerializer().serializeToString(el);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${rect.width}" height="${rect.height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">${data}</div></foreignObject></svg>`;
+  const img = new Image();
+  img.onload = () => {
+    ctx.drawImage(img, 0, 0);
+    const link = document.createElement('a');
+    link.download = `voucher-${lastVoucher.voucher_no}.png`;
+    link.href = canvas.toDataURL();
+    link.click();
+  };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+// VOUCHER SETTINGS
+function renderVoucherSettings() {
+  return `
+  <div class="p-4 fade-in">
+    <h2 class="text-lg font-bold mb-4">ဘောင်ချာ Design</h2>
+    <div class="space-y-4">
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3 text-sm">ဆိုင်အချက်အလက်</h3>
+        <div class="space-y-3">
+          <div><label class="text-xs opacity-60">Logo ပုံ</label><input type="file" accept="image/*" class="input-field text-xs" onchange="uploadLogo(this,'logo_image')"><div id="logo-preview" class="mt-1">${settings.logo_image ? `<img src="${settings.logo_image}" class="w-10 h-10 rounded-full object-cover">` : ''}</div></div>
+          <div><label class="text-xs opacity-60">ဆိုင်နာမည်</label><input class="input-field" value="${settings.shop_name}" onchange="settings.shop_name=this.value;saveSettings()"></div>
+          <div><label class="text-xs opacity-60">ဘောင်ချာ Prefix</label><input class="input-field" value="${settings.voucher_prefix}" onchange="settings.voucher_prefix=this.value;saveSettings()"></div>
+          <div><label class="text-xs opacity-60">ဖုန်းနံပါတ်</label><input class="input-field" value="${settings.shop_phone}" onchange="settings.shop_phone=this.value;saveSettings()"></div>
+          <div><label class="text-xs opacity-60">လိပ်စာ</label><input class="input-field" value="${settings.shop_address}" onchange="settings.shop_address=this.value;saveSettings()"></div>
+          <div><label class="text-xs opacity-60">Delivery Fee</label><input type="number" class="input-field" value="${settings.delivery_fee||''}" onchange="settings.delivery_fee=parseFloat(this.value)||0;saveSettings()" placeholder="0"></div>
+          <div><label class="text-xs opacity-60">မှတ်ချက်</label><input class="input-field" value="${settings.note}" onchange="settings.note=this.value;saveSettings()" placeholder="Optional"></div>
+        </div>
+      </div>
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3 text-sm flex justify-between">ငွေပေးချေနည်း <button onclick="addWallet()" class="btn-primary px-2 py-1 rounded-lg text-xs">+ ထည့်</button></h3>
+        <div class="space-y-2" id="wallet-list">
+          ${settings.wallets.map((w,i) => `
+          <div class="flex gap-2 items-center">
+            <input class="input-field flex-1 text-sm" value="${w.name}" onchange="settings.wallets[${i}].name=this.value;saveSettings()" placeholder="Wallet Name">
+            <button onclick="settings.wallets.splice(${i},1);saveSettings();renderCurrentTab()" class="p-1 rounded" style="color:var(--danger)"><i data-lucide="x" style="width:16px;height:16px;"></i></button>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function addWallet() {
+  settings.wallets.push({name: '', logo: ''});
+  saveSettings();
+  renderCurrentTab();
+}
+
+function uploadLogo(input, key) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => { settings[key] = e.target.result; saveSettings(); renderCurrentTab(); };
+  reader.readAsDataURL(file);
+}
+
+// SETTINGS
+function renderSettings() {
+  return `
+  <div class="p-4 fade-in">
+    <h2 class="text-lg font-bold mb-4">Dashboard ပြင်ဆင်</h2>
+    <div class="space-y-4">
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3 text-sm">Appearance</h3>
+        <div class="space-y-3">
+          <div><label class="text-xs opacity-60">Dashboard Name</label><input class="input-field" value="${settings.dashboard_name}" onchange="settings.dashboard_name=this.value;saveSettings()"></div>
+          <div><label class="text-xs opacity-60">Dashboard Logo</label><input type="file" accept="image/*" class="input-field text-xs" onchange="uploadLogo(this,'dashboard_logo')"></div>
+          <div><label class="text-xs opacity-60">Background Color</label><input type="color" class="w-full h-10 rounded-lg cursor-pointer" value="${settings.bg_color}" onchange="settings.bg_color=this.value;saveSettings()"></div>
+          <div><label class="text-xs opacity-60">Button Color</label><input type="color" class="w-full h-10 rounded-lg cursor-pointer" value="${settings.btn_color}" onchange="settings.btn_color=this.value;saveSettings()"></div>
+          <div class="flex justify-between items-center">
+            <span class="text-sm">Dark Mode</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" ${settings.dark_mode ? 'checked' : ''} onchange="settings.dark_mode=this.checked;if(!this.checked){settings.bg_color='#f8f9fa';}else{settings.bg_color='#0f0f23';}saveSettings();renderCurrentTab();" class="sr-only peer">
+              <div class="w-11 h-6 rounded-full peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600" style="background:rgba(255,255,255,0.2)"></div>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Toast
+function showToast(msg, type) {
+  const toast = document.createElement('div');
+  toast.className = 'fixed top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl text-sm font-medium z-50 fade-in';
+  toast.style.background = type === 'error' ? 'var(--danger)' : 'var(--accent2)';
+  toast.style.color = 'white';
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2500);
+}
+</script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9f5e4b4bd76d3daa',t:'MTc3NzgwMTEyMS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
